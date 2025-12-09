@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta content="A weather app which show today's weather and 5 days' forcast based on your location"
+          name="description">
+    <title>Weather App</title>
+    <link href="./css/base.css" rel="stylesheet">
+    <script type="module">
+        import {getCurrentPosition} from "./js/geolocation.js";
+
+        const WMO = {
+            0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+            45: "Fog", 48: "Rime fog",
+            51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
+            56: "Freezing drizzle", 57: "Freezing drizzle",
+            61: "Light rain", 63: "Rain", 65: "Heavy rain",
+            66: "Freezing rain", 67: "Freezing rain",
+            71: "Light snow", 73: "Snow", 75: "Heavy snow",
+            77: "Snow grains",
+            80: "Rain showers", 81: "Rain showers", 82: "Heavy showers",
+            85: "Snow showers", 86: "Snow showers",
+            95: "Thunderstorm", 96: "Thunderstorm hail", 99: "Thunderstorm hail"
+        };
+
+        const ICON_BASE = new URL("./assets/weather_icons/", window.location.href);
+        const HISTORY_KEY = "wx_history_v1";
+
+        function iconPath(code, isDay = true) {
+            const c = Number(code);
+            const file =
+                c === 0 ? (isDay ? "wi-day-sunny.svg" : "wi-night-clear.svg") :
+                    c === 1 ? (isDay ? "wi-day-sunny-overcast.svg" : "wi-night-alt-partly-cloudy.svg") :
+                        c === 2 ? (isDay ? "wi-day-cloudy.svg" : "wi-night-alt-cloudy.svg") :
+                            c === 3 ? "wi-cloudy.svg" :
+                                (c === 45 || c === 48) ? "wi-fog.svg" :
+                                    (c === 51 || c === 53 || c === 55) ? "wi-sprinkle.svg" :
+                                        (c === 56 || c === 57) ? "wi-sleet.svg" :
+                                            (c === 66 || c === 67) ? "wi-rain-mix.svg" :
+                                                (c === 61 || c === 63 || c === 65) ? "wi-rain.svg" :
+                                                    (c === 80 || c === 81) ? "wi-showers.svg" :
+                                                        (c === 82) ? "wi-storm-showers.svg" :
+                                                            (c === 71 || c === 73 || c === 75 || c === 77 || c === 85 || c === 86) ? "wi-snow.svg" :
+                                                                (c === 95) ? "wi-thunderstorm.svg" :
+                                                                    (c === 96 || c === 99) ? "wi-hail.svg" :
+                                                                        "wi-cloudy.svg";
+            return new URL(file, ICON_BASE).href;
+        }
+
+        function fmtF(n) {
+            return `${Math.round(n)}\u00B0 F`;
+        }
+
+        const locEl = document.getElementById("location");
+        const tempEl = document.getElementById("temp-now");
+        const hiLowSp = document.querySelectorAll(".hi-low span");
+        const descEl = document.getElementById("desc-today");
+        const iconImg = document.getElementById("icon-today");
+        const listEl = document.querySelector(".forecast-list");
+        const historyBtn = document.getElementById("open-history");
+        const manualPanel = document.getElementById("manual-panel");
+        const manualForm = document.getElementById("manual-form");
+        const latInput = document.getElementById("lat-input");
+        const lonInput = document.getElementById("lon-input");
+
+        ensureHistoryListContainer();
+
+        locEl.textContent = "Locating…";
+        getCurrentPosition()
+            .then(({ latitude, longitude }) => {
+                manualPanel.hidden = true;
+                useLocation(latitude, longitude);
+            })
+            .catch((error) => {
+                locEl.textContent = error.message;
+                if (error.code === 1) {  // User denied
+                    manualPanel.hidden = false;
+                }
+            });
+
+        manualForm.addEventListener("submit", (e) => {
+            e.preventDefault();
+            const lat = parseFloat(latInput.value);
+            const lon = parseFloat(lonInput.value);
+            if (Number.isFinite(lat) && Number.isFinite(lon)) {
+                locEl.textContent = `lat ${lat.toFixed(4)}, lon ${lon.toFixed(4)}`;
+                manualPanel.hidden = true;
+                useLocation(lat, lon);
+            } else {
+                locEl.textContent = "Invalid coordinates.";
+            }
+        });
+
+        function useLocation(lat, lon) {
+            locEl.textContent = `lat ${lat.toFixed(4)}, lon ${lon.toFixed(4)}`;
+            saveHistory({latitude: lat, longitude: lon});
+            fetchWeather(lat, lon)
+                .then((data) => renderWeather(data))
+                .catch((err) => {
+                    locEl.textContent = "Weather fetch failed: " + err.message;
+                });
+        }
+
+        function fetchWeather(lat, lon) {
+            const url =
+                "https://api.open-meteo.com/v1/forecast" +
+                `?latitude=${lat}&longitude=${lon}` +
+                "&current=temperature_2m,weather_code,is_day" +
+                "&daily=temperature_2m_max,temperature_2m_min,weather_code" +
+                "&forecast_days=5" +
+                "&temperature_unit=fahrenheit" +
+                "&timezone=auto";
+            return fetch(url).then((res) => {
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                return res.json();
+            });
+        }
+
+        function renderWeather(data) {
+            const tNow = data.current?.temperature_2m;
+            const code = data.current?.weather_code;
+            const isDayNow = data.current?.is_day === 1;
+            const hi0 = data.daily?.temperature_2m_max?.[0];
+            const lo0 = data.daily?.temperature_2m_min?.[0];
+
+            if (typeof tNow === "number") tempEl.innerHTML = fmtF(tNow);
+            if (hiLowSp[0]) hiLowSp[0].innerHTML = "H " + fmtF(hi0);
+            if (hiLowSp[1]) hiLowSp[1].innerHTML = "L " + fmtF(lo0);
+
+            const text = WMO[code] || "—";
+            descEl.textContent = text;
+            iconImg.alt = text;
+            iconImg.src = iconPath(code, isDayNow);
+            iconImg.width = 64;
+            iconImg.height = 64;
+            iconImg.loading = "eager";
+
+            const days = data.daily?.time || [];
+            const highs = data.daily?.temperature_2m_max || [];
+            const lows = data.daily?.temperature_2m_min || [];
+            const codes = data.daily?.weather_code || [];
+
+            listEl.innerHTML = "";
+            days.forEach((iso, i) => {
+                const d = new Date(iso + "T00:00:00");
+                const label = d.toLocaleDateString("en-US", {weekday: "short"});
+                const hi = highs[i];
+                const lo = lows[i];
+                const txt = WMO[codes[i]] || "—";
+                const codeDay = codes[i];
+
+                const li = document.createElement("li");
+                li.className = "day-card";
+                li.tabIndex = 0;
+                li.setAttribute("aria-label", `${label}: High ${Math.round(hi)}° F, Low ${Math.round(lo)}° F, ${txt}`);
+                li.innerHTML =
+                    `<time datetime="${iso}">${label}</time>` +
+                    `<img src="${iconPath(codeDay, true)}" alt="${txt}" width="48" height="48" loading="lazy" />` +
+                    `<div class="hi-low"><span>${fmtF(hi)}</span><span>${fmtF(lo)}</span></div>`;
+                listEl.appendChild(li);
+            });
+        }
+
+        function loadHistory() {
+            try {
+                return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+            } catch {
+                return [];
+            }
+        }
+
+        function saveHistory(entry) {
+            const key = (e) => `${Number(e.latitude).toFixed(4)},${Number(e.longitude).toFixed(4)}`;
+            let arr = loadHistory();
+            const k = key(entry);
+            arr = arr.filter((e) => key(e) !== k);
+            arr.unshift({latitude: entry.latitude, longitude: entry.longitude});
+            if (arr.length > 10) arr = arr.slice(0, 10);
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(arr));
+            renderHistory(arr);
+        }
+
+        function ensureHistoryListContainer() {
+            const nav = document.querySelector("nav[aria-label='Recent locations']");
+            if (!document.getElementById("history-list")) {
+                const ul = document.createElement("ul");
+                ul.id = "history-list";
+                ul.className = "history-list";
+                ul.setAttribute("role", "list");
+                ul.hidden = true;
+                nav.appendChild(ul);
+            }
+            renderHistory(loadHistory());
+        }
+
+        function renderHistory(arr) {
+            const ul = document.getElementById("history-list");
+            if (!ul) return;
+            ul.innerHTML = "";
+            arr.forEach((e) => {
+                const li = document.createElement("li");
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "history-item";
+                btn.dataset.lat = e.latitude;
+                btn.dataset.lon = e.longitude;
+                btn.textContent = `lat ${Number(e.latitude).toFixed(4)}, lon ${Number(e.longitude).toFixed(4)}`;
+                li.appendChild(btn);
+                ul.appendChild(li);
+            });
+        }
+
+        historyBtn.addEventListener("click", () => {
+            const ul = document.getElementById("history-list");
+            if (ul) ul.hidden = !ul.hidden;
+        });
+
+        document.addEventListener("click", (ev) => {
+            const btn = ev.target.closest(".history-item");
+            if (!btn) return;
+            const lat = parseFloat(btn.dataset.lat);
+            const lon = parseFloat(btn.dataset.lon);
+            useLocation(lat, lon);
+            const ul = document.getElementById("history-list");
+            if (ul) ul.hidden = true;
+        });
+    </script>
+</head>
+<body>
+<header class="app-header"><h1 class="sr-only">Weather</h1></header>
+<section aria-labelledby="manual-title" hidden id="manual-panel">
+    <h2 class="sr-only" id="manual-title">Manual location</h2>
+    <form class="manual-controls" id="manual-form">
+        <label>
+            Latitude
+            <input id="lat-input" inputmode="decimal" name="lat" placeholder="e.g. 40.7128" required>
+        </label>
+        <label>
+            Longitude
+            <input id="lon-input" inputmode="decimal" name="lon" placeholder="e.g. -74.0060" required>
+        </label>
+        <button type="submit">Fetch weather</button>
+    </form>
+</section>
+<main>
+    <section aria-labelledby="today-title" id="today" role="region"><h2 id="today-title">Today</h2>
+        <div aria-label="Current conditions" class="today-card" role="group">
+            <div class="today-temp">
+                <output aria-label="Current temperature" id="temp-now">72&deg; F</output>
+                <div class="hi-low"><span aria-label="High">H 78&deg; F</span> <span aria-label="Low">L 64&deg; F</span>
+                </div>
+            </div>
+            <figure class="today-icon"><img alt="Cloudy" id="icon-today"/>
+                <figcaption id="desc-today">Partly cloudy</figcaption>
+            </figure>
+            <p class="meta" id="location">New York, NY</p></div>
+    </section>
+    <section aria-labelledby="forecast-title" id="forecast" role="region"><h2 id="forecast-title">Next 5 days</h2>
+        <ul class="forecast-list" role="list">
+            <li aria-label="Monday: High 80&deg; F, Low 62&deg; F, Sunny" class="day-card" tabindex="0">
+                <time datetime="2025-09-22">Mon</time>
+                <img alt="Sunny"/>
+                <div class="hi-low"><span>80&deg; F</span><span>62&deg; F</span></div>
+            </li>
+        </ul>
+    </section>
+    <nav aria-label="Recent locations">
+        <button id="open-history">History</button>
+    </nav>
+</main>
+</body>
+</html>
