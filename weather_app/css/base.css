@@ -45,6 +45,21 @@ body { margin: 0; font-family: system-ui, -apple-system, "SF Pro Text", sans-ser
     background: #fef2f2;
     border: 1px solid #fecaca;
 }
+.message-error {
+    background-color: #fee;
+    border-left: 4px solid #c00;
+    color: #900;
+    padding: 8px 12px;
+    margin: 4px 0;
+}
+
+.message-warning {
+    background-color: #fff8e0;
+    border-left: 4px solid #f90;
+    color: #850;
+    padding: 8px 12px;
+    margin: 4px 0;
+}
 .controls {
     display: flex;
     gap: var(--gap);
@@ -71,4 +86,48 @@ body { margin: 0; font-family: system-ui, -apple-system, "SF Pro Text", sans-ser
 /* Leave space for fixed bottom bar */
 body {
     padding-bottom: 70px;
+}
+.history-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 0.75em 1em;
+    transition: background-color 0.2s;
+}
+
+.history-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.history-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+}
+
+.history-address {
+    font-weight: 500;
+}
+
+.history-coords {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+.history-delete {
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 1.4em;
+    opacity: 0.5;
+    padding: 0.25em 0.5em;
+    flex-shrink: 0;
+}
+
+.history-delete:hover {
+    opacity: 1;
+    color: #ff6b6b;
 }

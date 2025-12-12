@@ -161,5 +161,76 @@ export const WMO = {
     }
 };
 
-getAddress(42.3555,-71.0565)
-.then(result=>console.log(result));
+const MAX_HISTORY=20;
+const HISTORY_KEY = 'weather_history_234';
+
+export function loadHistory(){
+    let historyData;
+    try{
+        historyData=JSON.parse(localStorage.getItem(HISTORY_KEY));
+    }
+    catch(e){
+        throw new Error("Error: Cannot load history data."+e.message);
+    }
+    if(!historyData){
+        throw new Error("Error: No history found.");
+    }
+    else{
+        return historyData;
+    }
+}
+
+export function saveHistory(lat, lon, address) {
+    let historyData;
+    try{
+        historyData=loadHistory();
+    }
+    catch(e){
+        localStorage.setItem(HISTORY_KEY, '[]');
+        historyData=[];
+    }
+    const hasUnknown = address.includes('Unknown');
+    const exists = historyData.some(item => {
+        if (hasUnknown || item.address.includes('Unknown')) {
+            return Math.abs(item.lat - lat) < 0.01 && Math.abs(item.lon - lon) < 0.01;
+        }
+        return item.address === address;
+    });
+    if (exists) return;
+    historyData.unshift({
+        id: crypto.randomUUID(),
+        lat,
+        lon,
+        address,
+        timestamp: Date.now()
+    });
+    if (historyData.length > MAX_HISTORY) {
+        historyData = historyData.slice(0, MAX_HISTORY);
+    }
+    try{
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(historyData))
+    }
+    catch(e){
+        throw new Error("Error: Cannot write into history."+e.message);
+    }
+}
+
+export function removeHistoryItem(id) {
+    let historyData=loadHistory();
+    historyData = historyData.filter(item => item.id !== id);
+    try{
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(historyData));
+    }
+    catch(e) {
+        throw new Error("Error: Cannot remove history data."+e.message);
+    }
+}
+
+export function clearHistory() {
+    try{
+        localStorage.setItem(HISTORY_KEY, '[]');
+    }
+    catch(e) {
+        throw new Error("Error: Cannot clear history data."+e.message);
+    }
+}
