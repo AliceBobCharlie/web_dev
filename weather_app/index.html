@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Weather app with 5-day forecast based on your location">
+    <title>Weather App</title>
+    <link href="./css/base.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/weather-icons/2.0.12/css/weather-icons.min.css" rel="stylesheet">
+</head>
+<body>
+
+<header class="app-header">
+    <h1 class="sr-only">Weather</h1>
+</header>
+
+<section id="location-panel" aria-labelledby="manual-title">
+    <h2 id="location-title" class="sr-only">Input location</h2>
+    <form id="input-form" class="manual-controls">
+        <label>
+            Latitude
+            <input id="lat-input" type="number" step="any" min="-90" max="90" required>
+        </label>
+        <label>
+            Longitude
+            <input id="lon-input" type="number" step="any" min="-180" max="180" required>
+        </label>
+        <button id="btn-submit" type="submit">Get Weather</button>
+        <button id="btn-auto" type="button">Auto</button>
+    </form>
+    <p id="form-message" class="message" hidden></p>
+</section>
+
+<main>
+    <section id="today" aria-labelledby="today-title">
+        <h2 id="today-title">Today</h2>
+        <div class="today-card" aria-label="Current conditions">
+            <div class="today-temp">
+                <output id="temp-now" aria-label="Current temperature">--</output>
+                <div class="hi-low">
+                    <span id="today-high" aria-label="High">--</span>
+                    <span id="today-low" aria-label="Low">--</span>
+                </div>
+            </div>
+            <figure class="today-icon">
+                <i id="icon-today" class="wi" aria-hidden="true"></i>
+                <figcaption id="weather-today"></figcaption>
+            </figure>
+            <time id="current-time" class="current-time"></time>
+            <p id="location" class="meta">Locating…</p>
+        </div>
+        <p id="weather-message" class="message" hidden></p>
+    </section>
+
+    <section id="forecast" aria-labelledby="forecast-title">
+        <h2 id="forecast-title">5-Day Forecast</h2>
+        <ul id="forecast-list" class="forecast-list">
+            <!-- JS fills <li class="day-card"> items -->
+        </ul>
+        <p id="forecast-message" class="message" hidden></p>
+    </section>
+
+    <nav aria-label="Location controls">
+        <button id="btn-history" type="button">History</button>
+        <button id="btn-clear-history" type="button" hidden>Clear All</button>
+    </nav>
+
+    <ul id="history-list" class="history-list" hidden>
+        <!-- JS fills -->
+    </ul>
+    <div id="history-message">
+
+    </div>
+</main>
+
+<script type="module">
+    import {getCurrentPosition} from "./js/geolocation.js";
+    import {fetchWeather} from "./js/getweather.js";
+    import {getAddress, fmtF, WMO, saveHistory, loadHistory, clearHistory, removeHistoryItem} from "./js/util.js";
+
+    let lat, lon;
+
+    const $ = (id) => document.getElementById(id);
+    const formMsg = $('form-message');
+    const weatherMsg = $('weather-message');
+    const latInput = $("lat-input");
+    const lonInput = $("lon-input");
+    const forecastList = $("forecast-list");
+    const forecastMsg = $("forecast-message");
+    const historyList = $('history-list');
+    const historyMsg = $('history-message');
+
+    async function getLocation() {
+        try {
+            await getCurrentPosition().then(pos => {
+                lat = pos.latitude;
+                lon = pos.longitude;
+            });
+            latInput.value = lat.toFixed(6);
+            lonInput.value = lon.toFixed(6);
+            void getWeather();
+        } catch (e) {
+            formMsg.textContent = "Auto Location Failed. Input Manually.";
+            formMsg.hidden = false;
+        }
+    }
+
+    async function getWeather() {
+        // this api does not support fetching address, must do it manually first
+        let display_addr;
+        try {
+            const addr = await getAddress(lat, lon);
+            if (addr.country !== "United States") {
+                formMsg.textContent = "Warning: Weather outside US may be inaccurate.";
+                formMsg.hidden = false;
+            }
+            display_addr = `${addr.city ?? "Unknown"}, ${addr.state ?? "Unknown"}, ${addr.country ?? "Unknown"} `
+            $("location").textContent = display_addr;
+        } catch (e) {
+            formMsg.textContent = e.message;
+            formMsg.hidden = false;
+        }
+        //save history
+        try {
+            saveHistory(lat, lon, display_addr);
+        } catch (e) {
+            const p = document.createElement('p');
+            p.className = 'message message-warning';
+            p.textContent = "Warning: History not saved. " + e.message;
+            historyMsg.appendChild(p);
+        }
+
+        if (!historyList.hidden) {
+            renderHistoryList();
+        }
+        // now we can fetch weather
+        const data = await fetchWeather(lat, lon)
+            .catch(e => {
+                weatherMsg.textContent = "Failed to fetch weather. " + e.message;
+                weatherMsg.hidden = false;
+            })
+        renderToday(data);
+        renderForecast(data);
+    }
+
+    function renderToday(data) {
+        try {
+            const now = data.current;
+            const daily = data.daily;
+            $('temp-now').textContent = fmtF(now.temperature_2m);
+            $('today-high').innerHTML = "H " + fmtF(daily.temperature_2m_max?.[0]);
+            $('today-low').innerHTML = " L " + fmtF(daily.temperature_2m_min?.[0]);
+            const weather = WMO[now.weather_code];
+            $('weather-today').textContent = weather.description;
+            $('icon-today').className = `wi ${now.is_day === 1 ? weather.day : weather.night}`;
+            updateTime(data.timezone);
+        } catch (e) {
+            weatherMsg.textContent = "Failed to render today's weather. " + e.message;
+            weatherMsg.hidden = false;
+        }
+    }
+
+    function updateTime(timeZone) {
+        if (timeIntervalId) clearInterval(timeIntervalId);
+        const update = () => {
+            const now = new Date();
+            $('current-time').textContent = now.toLocaleTimeString('en-US', {
+                timeZone: timeZone,
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        };
+        update();
+        timeIntervalId = setInterval(update, 60000);
+    }
+
+    function renderForecast(data) {
+        try {
+            const forecast = data.daily
+            forecastList.innerHTML = "";
+            forecast.time.forEach((iso, i) => {
+                const d = new Date(iso + "T00:00:00");
+                const label = d.toLocaleDateString("en-US", {weekday: "short", month: "short", day: "numeric"});
+                const hi = forecast.temperature_2m_max[i];
+                const lo = forecast.temperature_2m_min[i];
+                const weather = WMO[forecast.weather_code[i]];
+                const li = document.createElement("li");
+                li.className = "day-card";
+                li.tabIndex = 0;
+                li.setAttribute("aria-label", `${label}: High ${Math.round(hi)}° F, Low ${Math.round(lo)}° F, ${weather.description}`);
+                li.innerHTML =
+                    `<time datetime="${iso}">${label} </time>` +
+                    `<i class="wi ${weather.day}" aria-hidden="true"></i>` +
+                    `<div class="hi-low"><span>${fmtF(hi)}</span><span> ${fmtF(lo)}</span></div>`;
+                forecastList.appendChild(li);
+            });
+        } catch (e) {
+            forecastMsg.textContent = "Failed to render forecast. " + e.message;
+            forecastMsg.hidden = false;
+        }
+    }
+
+    $("input-form").onsubmit = (e) => {
+        e.preventDefault();
+        lat = parseFloat(latInput.value);
+        lon = parseFloat(lonInput.value);
+        document.querySelectorAll(".message").forEach(el => el.hidden = true);
+        historyMsg.innerHTML="";
+        void getWeather();
+    };
+
+    $("btn-auto").onclick = () => {
+        document.querySelectorAll(".message").forEach(el => el.hidden = true);
+        historyMsg.innerHTML="";
+        void getLocation();
+    }
+
+    $('btn-history').onclick = () => {
+        const historyList = $('history-list');
+        const isHidden = historyList.hidden;
+        if (isHidden) {
+            renderHistoryList();
+        }
+        historyList.hidden = !isHidden;
+        $('btn-clear-history').hidden = !isHidden;
+    };
+
+    $('btn-clear-history').onclick = () => {
+        if (!confirm('Are you sure you want to clear all history?')) return;
+        clearHistory();
+        renderHistoryList();
+        historyList.hidden = true;
+        $('btn-clear-history').hidden = true;
+    };
+
+    function renderHistoryList() {
+        let historyData;
+        try{
+            historyData = loadHistory()
+        }
+        catch(e){
+            historyData=[];
+            const p = document.createElement('p');
+            p.className = 'message message-error';
+            p.textContent = e.message;
+            historyMsg.appendChild(p);
+        }
+        historyList.innerHTML = '';
+        if (historyData.length === 0) {
+            historyList.innerHTML = '<li class="history-empty">No history yet</li>';
+            return;
+        }
+        historyData.forEach(item => {
+            const li = document.createElement('li');
+            li.className = 'history-item';
+            li.dataset.lat = item.lat;
+            li.dataset.lon = item.lon;
+            li.innerHTML = `
+<div class="history-info">
+<span class="history-address">${item.address}</span>
+<span class="history-coords">${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}</span>
+</div>
+<button class="history-delete" type="button" data-id="${item.id}" aria-label="Delete">×</button>`;
+            historyList.appendChild(li);
+        });
+    }
+
+    historyList.onclick = (e) => {
+        // Handle delete button
+        const item = e.target.closest('.history-item');
+        if (e.target.classList.contains('history-delete')) {
+            e.stopPropagation();
+            removeHistoryFromList(e);
+        } else {
+            loadLocationFromHistory(item);
+        }
+    }
+
+    function removeHistoryFromList(e) {
+        try{
+            removeHistoryItem(e.target.dataset.id);
+        }
+        catch(err) {
+            const p = document.createElement('p');
+            p.className = 'message message-warning';
+            p.textContent = "Warning: Location not deleted. " + err.message;
+            historyMsg.appendChild(p);
+            return;
+        }
+        try{
+            const item = e.target.closest('.history-item');
+            item.remove();
+            if (historyList.children.length === 0) {
+                historyList.innerHTML = '<li class="history-empty">No history yet</li>';
+            }
+        }
+        catch(err) {
+            const p = document.createElement('p');
+            p.className = 'message message-warning';
+            p.textContent = "Warning: History deleted, but not correctly removed from the page. " + err.message;
+            historyMsg.appendChild(p);
+        }
+    }
+
+    function loadLocationFromHistory(item){
+        try{
+            lat = parseFloat(item.dataset.lat);
+            lon = parseFloat(item.dataset.lon);
+            latInput.value = lat.toFixed(6);
+            lonInput.value = lon.toFixed(6);
+            document.querySelectorAll('.message').forEach(el => el.hidden = true);
+            historyMsg.innerHTML="";
+            void getWeather();
+        }
+        catch(e) {
+            const p = document.createElement('p');
+            p.className = 'message message-warning';
+            p.textContent = "Warning: Cannot load location. " + e.message;
+            historyMsg.appendChild(p);        }
+    }
+    void getLocation();
+    let timeIntervalId = null;
+</script>
+</body>
+</html>
