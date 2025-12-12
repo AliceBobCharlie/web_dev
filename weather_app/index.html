@@ -145,15 +145,15 @@
 
     function renderToday(data) {
         try {
-            const now = data.current;
-            const daily = data.daily;
-            $('temp-now').textContent = fmtF(now.temperature_2m);
-            $('today-high').innerHTML = "H " + fmtF(daily.temperature_2m_max?.[0]);
-            $('today-low').innerHTML = " L " + fmtF(daily.temperature_2m_min?.[0]);
-            const weather = WMO[now.weather_code];
+            const now = data?.current;
+            const daily = data?.daily;
+            $('temp-now').textContent = fmtF(now?.temperature_2m);
+            $('today-high').innerHTML = "H " + fmtF(daily?.temperature_2m_max?.[0]);
+            $('today-low').innerHTML = " L " + fmtF(daily?.temperature_2m_min?.[0]);
+            const weather = WMO[now?.weather_code];
             $('weather-today').textContent = weather.description;
-            $('icon-today').className = `wi ${now.is_day === 1 ? weather.day : weather.night}`;
-            updateTime(data.timezone);
+            $('icon-today').className = `wi ${now?.is_day === 1 ? weather.day : weather.night}`;
+            updateTime(data?.timezone);
         } catch (e) {
             weatherMsg.textContent = "Failed to render today's weather. " + e.message;
             weatherMsg.hidden = false;
@@ -181,14 +181,14 @@
 
     function renderForecast(data) {
         try {
-            const forecast = data.daily
+            const forecast = data?.daily
             forecastList.innerHTML = "";
-            forecast.time.forEach((iso, i) => {
+            forecast?.time.forEach((iso, i) => {
                 const d = new Date(iso + "T00:00:00");
                 const label = d.toLocaleDateString("en-US", {weekday: "short", month: "short", day: "numeric"});
-                const hi = forecast.temperature_2m_max[i];
-                const lo = forecast.temperature_2m_min[i];
-                const weather = WMO[forecast.weather_code[i]];
+                const hi = forecast?.temperature_2m_max[i];
+                const lo = forecast?.temperature_2m_min[i];
+                const weather = WMO[forecast?.weather_code[i]];
                 const li = document.createElement("li");
                 li.className = "day-card";
                 li.tabIndex = 0;
@@ -239,17 +239,7 @@
     };
 
     function renderHistoryList() {
-        let historyData;
-        try{
-            historyData = loadHistory()
-        }
-        catch(e){
-            historyData=[];
-            const p = document.createElement('p');
-            p.className = 'message message-error';
-            p.textContent = e.message;
-            historyMsg.appendChild(p);
-        }
+        const historyData = loadHistory()
         historyList.innerHTML = '';
         if (historyData.length === 0) {
             historyList.innerHTML = '<li class="history-empty">No history yet</li>';
@@ -292,36 +282,21 @@
             historyMsg.appendChild(p);
             return;
         }
-        try{
-            const item = e.target.closest('.history-item');
-            item.remove();
-            if (historyList.children.length === 0) {
-                historyList.innerHTML = '<li class="history-empty">No history yet</li>';
-            }
-        }
-        catch(err) {
-            const p = document.createElement('p');
-            p.className = 'message message-warning';
-            p.textContent = "Warning: History deleted, but not correctly removed from the page. " + err.message;
-            historyMsg.appendChild(p);
+        const item = e.target.closest('.history-item');
+        item.remove();
+        if (historyList.children.length === 0) {
+            historyList.innerHTML = '<li class="history-empty">No history yet</li>';
         }
     }
 
-    function loadLocationFromHistory(item){
-        try{
-            lat = parseFloat(item.dataset.lat);
-            lon = parseFloat(item.dataset.lon);
-            latInput.value = lat.toFixed(6);
-            lonInput.value = lon.toFixed(6);
-            document.querySelectorAll('.message').forEach(el => el.hidden = true);
-            historyMsg.innerHTML="";
-            void getWeather();
-        }
-        catch(e) {
-            const p = document.createElement('p');
-            p.className = 'message message-warning';
-            p.textContent = "Warning: Cannot load location. " + e.message;
-            historyMsg.appendChild(p);        }
+    function loadLocationFromHistory(item) {
+        lat = parseFloat(item.dataset.lat);
+        lon = parseFloat(item.dataset.lon);
+        latInput.value = lat.toFixed(6);
+        lonInput.value = lon.toFixed(6);
+        document.querySelectorAll('.message').forEach(el => el.hidden = true);
+        historyMsg.innerHTML = "";
+        void getWeather();
     }
     void getLocation();
     let timeIntervalId = null;
